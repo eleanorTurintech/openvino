@@ -132,11 +132,9 @@ def load_model(model_name, device, no_modify=True):
     """Load a YOLO model for OpenVINO inference without modifying installed packages"""
     print(f"Loading {model_name} on {device}...")
     
-    if not YOLO_AVAILABLE:
-        print("ERROR: Ultralytics YOLO is required for model loading")
-        sys.exit(1)
-    
-    det_model_path = Path(f"{model_name}_openvino_model/{model_name}.xml")
+    # Use absolute paths based on the script location, not the current working directory
+    script_dir = Path(__file__).resolve().parent
+    det_model_path = script_dir / f"{model_name}_openvino_model" / f"{model_name}.xml"
     
     # Export model to OpenVINO format if needed
     if not det_model_path.exists():
@@ -144,14 +142,16 @@ def load_model(model_name, device, no_modify=True):
         pt_model = YOLO(f"{model_name}.pt")
         
         if no_modify:
-            # Create a temporary directory for export to avoid modifying the installed package
-            export_dir = Path(f"./tmp_export_{model_name}")
+            # Create a temporary directory for export - use absolute paths
+            export_dir = script_dir / f"tmp_export_{model_name}"
             export_dir.mkdir(exist_ok=True)
-            pt_model.export(format="openvino", dynamic=True, half=True, export_dir=export_dir)
+            
+            # Use absolute paths for export
+            pt_model.export(format="openvino", dynamic=True, half=True, export_dir=str(export_dir))
             
             # Move exported files to the desired location
             if export_dir.exists():
-                target_dir = Path(f"{model_name}_openvino_model")
+                target_dir = script_dir / f"{model_name}_openvino_model"
                 target_dir.mkdir(exist_ok=True)
                 for file in export_dir.glob("*"):
                     target_file = target_dir / file.name
@@ -166,8 +166,9 @@ def load_model(model_name, device, no_modify=True):
                 except:
                     pass
         else:
-            # Direct export
-            pt_model.export(format="openvino", dynamic=True, half=True)
+            # Direct export to script directory
+            output_dir = script_dir
+            pt_model.export(format="openvino", dynamic=True, half=True, export_dir=str(output_dir))
             
         del pt_model
         gc.collect()
@@ -365,21 +366,30 @@ def download_sample_video(path="traffic.mp4"):
     return True
 
 if __name__ == "__main__":
+    # Get the script directory for absolute paths
+    script_dir = Path(__file__).resolve().parent
+    
     # Benchmark configuration
     MODEL_NAME = "yolov8n"           # Model to benchmark (yolov8n, yolov8s, yolov8m, etc.)
     DEVICE = "CPU"                   # Device to use (CPU, GPU, AUTO, etc.)
-    VIDEO_PATH = "traffic.mp4"       # Path to video file
+    VIDEO_PATH = script_dir / "traffic.mp4"  # Use absolute path based on script directory
     WARMUP_FRAMES = 10               # Number of frames to use for warmup
     MAX_FRAMES = 100                 # Maximum frames to process (0 for all)
     NO_MODIFY = True                 # Set to True to avoid modifying installed packages
     
     # Download the video file if it doesn't exist
-    if VIDEO_PATH == "traffic.mp4":
-        if not download_sample_video(VIDEO_PATH):
+    if not VIDEO_PATH.exists():
+        print(f"Downloading sample traffic video to {VIDEO_PATH}...")
+        video_url = "https://github.com/intel-iot-devkit/sample-videos/raw/master/traffic.mp4"
+        try:
+            urllib.request.urlretrieve(video_url, VIDEO_PATH)
+            print("Download complete!")
+        except Exception as e:
+            print(f"Error downloading video: {e}")
             sys.exit(1)
     
-    # Run the benchmark in headless mode
-    print("Starting benchmark in fully headless mode...")
+    # Run the benchmark
+    print("Starting benchmark...")
     try:
         run_benchmark(
             model_name=MODEL_NAME,
